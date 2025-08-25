@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "moeviz-oss"
+version = "0.1.0"
+description = "MoE Top-K visualization for gpt-oss with two prompts and one question"
+authors = [{name="s4piru"}]
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = [
+  "torch",
+  "transformers>=4.55.0",
+  "numpy",
+  "pandas",
+  "matplotlib"
+]
+
+[project.scripts]
+moeviz-oss = "moeviz_oss.cli:main"
