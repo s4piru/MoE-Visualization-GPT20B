@@ -30,10 +30,8 @@ def layerwise_jsd_from_topk(moeA, moeB, gen_steps, startA, startB):
         Sb = Pb.shape[1]
         ea = Pa.shape[2]
         eb = Pb.shape[2]
-        L = max(ea, eb)
         T = gen_steps
         M = np.zeros((T,))
-        H = np.zeros((T,))
         for t in range(T):
             ia = startA + t
             ib = startB + t
@@ -44,11 +42,10 @@ def layerwise_jsd_from_topk(moeA, moeB, gen_steps, startA, startB):
             idxb = Ib[0, ib]
             probb = Pb[0, ib]
             sup = np.union1d(idxa, idxb)
-            pa = _build_sparse_vec(idxa, proba, int(np.max(sup)+1))
-            pb = _build_sparse_vec(idxb, probb, int(np.max(sup)+1))
+            pa = _build_sparse_vec(idxa, proba, int(np.max(sup) + 1))
+            pb = _build_sparse_vec(idxb, probb, int(np.max(sup) + 1))
             d = _jsd(pa, pb)
             M[t] = d
-            H[t] = d
         mats[name] = M
     return mats
 
@@ -62,25 +59,32 @@ def summarize_expert_shifts(moeA, moeB, gen_steps, startA, startB, topn=10):
         Ib = moeB[name]["topk_indices"]
         Sa = Pa.shape[1]
         Sb = Pb.shape[1]
-        delta = {}
+        base_mass = {}
+        var_mass = {}
         for t in range(gen_steps):
             ia = startA + t
             ib = startB + t
             if ia >= Sa or ib >= Sb:
                 continue
-            idxa = Ia[0, ia]
-            proba = Pa[0, ia]
-            idxb = Ib[0, ib]
-            probb = Pb[0, ib]
-            sup = set(idxa.tolist()) | set(idxb.tolist())
-            for e in sup:
-                va = proba[idxa.tolist().index(e)] if e in idxa else 0.0
-                vb = probb[idxb.tolist().index(e)] if e in idxb else 0.0
-                delta[e] = delta.get(e, 0.0) + (vb - va)
-        for e, v in delta.items():
-            rows.append((name, int(e), float(v)))
-    df = pd.DataFrame(rows, columns=["layer", "expert", "delta"])
+            idxa = Ia[0, ia].tolist()
+            proba = Pa[0, ia].tolist()
+            idxb = Ib[0, ib].tolist()
+            probb = Pb[0, ib].tolist()
+            dA = {int(e): float(p) for e, p in zip(idxa, proba)}
+            dB = {int(e): float(p) for e, p in zip(idxb, probb)}
+            keys = set(dA.keys()) | set(dB.keys())
+            for e in keys:
+                base_mass[e] = base_mass.get(e, 0.0) + dA.get(e, 0.0)
+                var_mass[e] = var_mass.get(e, 0.0) + dB.get(e, 0.0)
+        all_keys = set(base_mass.keys()) | set(var_mass.keys())
+        for e in all_keys:
+            bm = float(base_mass.get(e, 0.0))
+            vm = float(var_mass.get(e, 0.0))
+            rows.append((name, int(e), bm, vm, vm - bm, abs(vm - bm)))
+    df = pd.DataFrame(rows, columns=["layer", "expert", "base_mass", "var_mass", "delta", "abs_delta"])
     if df.empty:
         return df
-    df = df.sort_values("delta", ascending=False).head(topn)
+    df = df.sort_values(["layer", "abs_delta"], ascending=[True, False])
+    df = df.groupby("layer", as_index=False).head(topn)
+    df = df.sort_values(["layer", "abs_delta"], ascending=[True, False]).reset_index(drop=True)
     return df

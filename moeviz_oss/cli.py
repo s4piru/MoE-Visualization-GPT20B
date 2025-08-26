@@ -27,6 +27,7 @@ def main():
     max_new_tokens = int(cfg.get("max_new_tokens", 128))
     temperature = float(cfg.get("temperature", 0.2))
     topk = int(cfg.get("topk", 4))
+    topn_per_layer = int(cfg.get("topn_per_layer", 10))
 
     A, B, gen_steps, startA, startB = run_pairwise_trace(
         tok, model, prompt_base, prompt_var, question,
@@ -34,7 +35,7 @@ def main():
     )
 
     jsd_map = layerwise_jsd_from_topk(A["moe"], B["moe"], gen_steps, startA, startB)
-    df_shift = summarize_expert_shifts(A["moe"], B["moe"], gen_steps, startA, startB, topn=20)
+    df_shift = summarize_expert_shifts(A["moe"], B["moe"], gen_steps, startA, startB, topn=topn_per_layer)
 
     os.makedirs(args.out, exist_ok=True)
     plot_jsd_heatmap(jsd_map, os.path.join(args.out, "jsd_heatmap.png"), title="JSD(base vs var)")
@@ -50,6 +51,7 @@ def main():
         }, f, ensure_ascii=False, indent=2)
 
     if not df_shift.empty:
-        df_shift.to_csv(os.path.join(args.out, "expert_shifts_top20.csv"), index=False, encoding="utf-8")
+        out_csv = os.path.join(args.out, f"expert_shifts_per_layer_top{topn_per_layer}.csv")
+        df_shift.to_csv(out_csv, index=False, encoding="utf-8")
     with open(os.path.join(args.out, "layers.json"), "w", encoding="utf-8") as f:
         json.dump(sorted(list(set(A["moe"].keys()).intersection(set(B["moe"].keys())))), f, ensure_ascii=False, indent=2)
